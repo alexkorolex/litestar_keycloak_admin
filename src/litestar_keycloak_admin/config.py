@@ -26,6 +26,11 @@ class RefreshCookieConfig:
 
 @dataclass(frozen=True, slots=True)
 class KeycloakAdminConfig:
+    """Settings of ``KeycloakAdminPlugin``.
+
+    Usually built with ``from_env``; build it directly to pass a ``KeycloakConfig`` of your own.
+    """
+
     keycloak: KeycloakConfig
     """Token validation settings of ``litestar-keycloak``; its ``server_url``, ``realm``,
     ``client_id`` and ``client_secret`` are reused for every call made here."""
@@ -43,9 +48,12 @@ class KeycloakAdminConfig:
     defines, so new roles only need to be added in Keycloak."""
 
     auth_path: str = "/auth"
+    """Path the session and account endpoints are mounted under."""
     refresh_cookie: RefreshCookieConfig = field(default_factory=RefreshCookieConfig)
     min_password_length: int = 8
+    """Checked before a password reaches Keycloak, whose own password policy applies too."""
     timeout: float = 10
+    """Seconds allowed for each request to Keycloak."""
 
     @classmethod
     def from_env(

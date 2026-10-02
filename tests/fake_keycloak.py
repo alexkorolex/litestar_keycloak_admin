@@ -86,13 +86,17 @@ class FakeKeycloak:
 
     async def _role(self, request: web.Request) -> web.Response:
         self._authorized(request)
-        role = next((role for role in REALM_ROLES if role["name"] == request.match_info["name"]), None)
+        role = next(
+            (role for role in REALM_ROLES if role["name"] == request.match_info["name"]), None
+        )
         return web.json_response(role) if role else web.json_response({}, status=404)
 
     async def _create_user(self, request: web.Request) -> web.Response:
         self._authorized(request)
         self.created.append(await request.json())
-        return web.Response(status=201, headers={"Location": f"{self.url}/admin/realms/{REALM}/users/new-id"})
+        return web.Response(
+            status=201, headers={"Location": f"{self.url}/admin/realms/{REALM}/users/new-id"}
+        )
 
     async def _assign(self, request: web.Request) -> web.Response:
         self._authorized(request)

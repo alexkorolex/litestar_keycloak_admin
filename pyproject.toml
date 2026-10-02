@@ -1,9 +1,35 @@
 [project]
 name = "litestar-keycloak-admin"
 version = "0.1.0"
-description = "Keycloak user management for Litestar on top of litestar-keycloak: password login proxy, registration, profile and an Admin REST API client"
+description = "Keycloak account and user administration for Litestar applications"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+    { name = "Alexander Korolev", email = "alexkorolex@bk.ru" },
+]
+keywords = [
+    "authentication",
+    "keycloak",
+    "litestar",
+    "oauth2",
+    "oidc",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
 dependencies = [
     "aiohttp>=3.9",
     "click>=8.1",
@@ -11,6 +37,31 @@ dependencies = [
     "litestar-keycloak>=0.3.2,<0.4",
 ]
 
+[project.urls]
+Changelog = "https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/alexkorolex/litestar_keycloak_admin#readme"
+Issues = "https://github.com/alexkorolex/litestar_keycloak_admin/issues"
+Repository = "https://github.com/alexkorolex/litestar_keycloak_admin"
+
+[dependency-groups]
+dev = [
+    "build>=1.3,<2",
+    "pytest>=8.4,<10",
+    "ruff>=0.14,<1",
+    "twine>=6.2,<7",
+]
+
 [build-system]
 requires = ["uv_build>=0.11,<0.12"]
 build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]

@@ -19,7 +19,9 @@ def keycloak_admin(connection: ASGIConnection[Any, Any, Any, Any]) -> KeycloakAd
     return connection.app.state[STATE_KEY]
 
 
-def requires_admin(connection: ASGIConnection[Any, Any, Any, Any], handler: BaseRouteHandler) -> None:
+def requires_admin(
+    connection: ASGIConnection[Any, Any, Any, Any], handler: BaseRouteHandler
+) -> None:
     """Guard: the caller holds the configured ``admin_role``."""
     role = keycloak_admin(connection).config.admin_role
     require_roles(role, strategy=MatchStrategy.ANY)(connection, handler)
@@ -88,7 +90,10 @@ class RoleResponse:
 
 @dataclass
 class UserResponse:
+    """A user as returned by ``/me`` and ``/register``; ``roles`` are realm roles."""
+
     id: str
+    """The Keycloak subject id (``sub``)."""
     username: str | None
     email: str | None
     first_name: str | None
@@ -139,7 +144,9 @@ def _token_response(config: KeycloakAdminConfig, tokens: dict[str, Any]) -> Resp
 
 def _refresh_token(request: Request[Any, Any, Any], data: RefreshTokenRequest | None) -> str | None:
     config = keycloak_admin(request).config
-    from_cookie = request.cookies.get(config.refresh_cookie.name) if config.refresh_cookie.enabled else None
+    from_cookie = (
+        request.cookies.get(config.refresh_cookie.name) if config.refresh_cookie.enabled else None
+    )
     return from_cookie or (data.refresh_token if data else None)
 
 
@@ -150,7 +157,9 @@ def _invalid(field: str, message: str) -> ClientException:
 
 def _check_password_length(config: KeycloakAdminConfig, field: str, password: str) -> None:
     if len(password) < config.min_password_length:
-        raise _invalid(field, f"Password must be at least {config.min_password_length} characters long")
+        raise _invalid(
+            field, f"Password must be at least {config.min_password_length} characters long"
+        )
 
 
 class KeycloakSessionController(Controller):
@@ -165,7 +174,9 @@ class KeycloakSessionController(Controller):
     tags = ("auth",)
 
     @post("/login", status_code=200, name="keycloak:login")
-    async def login(self, request: Request[Any, Any, Any], data: LoginRequest) -> Response[TokenResponse]:
+    async def login(
+        self, request: Request[Any, Any, Any], data: LoginRequest
+    ) -> Response[TokenResponse]:
         client = keycloak_admin(request)
         return _token_response(client.config, await client.login(data.username, data.password))
 
@@ -178,7 +189,9 @@ class KeycloakSessionController(Controller):
         _check_password_length(client.config, "new_password", data.new_password)
         if data.new_password == data.password:
             raise _invalid("new_password", "The new password must differ from the temporary one")
-        tokens = await client.complete_initial_password(data.username, data.password, data.new_password)
+        tokens = await client.complete_initial_password(
+            data.username, data.password, data.new_password
+        )
         return _token_response(client.config, tokens)
 
     @post("/refresh", status_code=200, name="keycloak:refresh")
@@ -200,7 +213,9 @@ class KeycloakSessionController(Controller):
         client = keycloak_admin(request)
         if refresh_token := _refresh_token(request, data):
             await client.logout(refresh_token)
-        cookies = [_refresh_cookie(client.config, "", 0)] if client.config.refresh_cookie.enabled else []
+        cookies = (
+            [_refresh_cookie(client.config, "", 0)] if client.config.refresh_cookie.enabled else []
+        )
         return Response(content=None, status_code=204, cookies=cookies)
 
 
@@ -240,7 +255,10 @@ class KeycloakAccountController(Controller):
 
     @post("/password", status_code=204, name="keycloak:password")
     async def change_password(
-        self, request: Request[Any, Any, Any], current_user: CurrentUser, data: PasswordChangeRequest
+        self,
+        request: Request[Any, Any, Any],
+        current_user: CurrentUser,
+        data: PasswordChangeRequest,
     ) -> None:
         client = keycloak_admin(request)
         _check_password_length(client.config, "new_password", data.new_password)
@@ -262,14 +280,18 @@ class KeycloakAccountController(Controller):
         ]
 
     @post("/register", status_code=201, name="keycloak:register", guards=[requires_admin])
-    async def register(self, request: Request[Any, Any, Any], data: RegisterRequest) -> UserResponse:
+    async def register(
+        self, request: Request[Any, Any, Any], data: RegisterRequest
+    ) -> UserResponse:
         """Create a user with a temporary password and any number of realm roles."""
         client = keycloak_admin(request)
         config = client.config
         roles = list(dict.fromkeys(data.roles))
         if not roles:
             raise _invalid("roles", "At least one role is required")
-        if config.assignable_roles and (unknown := [r for r in roles if r not in config.assignable_roles]):
+        if config.assignable_roles and (
+            unknown := [r for r in roles if r not in config.assignable_roles]
+        ):
             raise _invalid("roles", f"Roles cannot be assigned: {', '.join(unknown)}")
         _check_password_length(config, "password", data.password)
 

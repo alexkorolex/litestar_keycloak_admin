@@ -13,6 +13,7 @@ from litestar import Litestar, get
 from litestar.cli.main import litestar_group
 from litestar.testing import TestClient
 from litestar_keycloak import CurrentUser, MatchStrategy, require_roles
+
 from litestar_keycloak_admin import KeycloakAdminConfig, KeycloakAdminPlugin, RefreshCookieConfig
 
 ISSUER = f"https://sso.example.com/realms/{REALM}"
@@ -81,7 +82,9 @@ def client(keycloak: FakeKeycloak) -> Iterator[TestClient[Litestar]]:
 
 
 def test_me_returns_token_user_with_all_roles(client: TestClient[Litestar]) -> None:
-    response = client.get("/auth/me", headers=bearer(make_token("user", "dispatcher", email="a@example.com")))
+    response = client.get(
+        "/auth/me", headers=bearer(make_token("user", "dispatcher", email="a@example.com"))
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -104,7 +107,9 @@ def test_me_returns_token_user_with_all_roles(client: TestClient[Litestar]) -> N
         bearer(make_token("user", aud="someone-else", azp="someone-else")),
     ],
 )
-def test_me_rejects_missing_or_invalid_token(client: TestClient[Litestar], headers: dict[str, str]) -> None:
+def test_me_rejects_missing_or_invalid_token(
+    client: TestClient[Litestar], headers: dict[str, str]
+) -> None:
     assert client.get("/auth/me", headers=headers).status_code == 401
 
 
@@ -119,7 +124,12 @@ def test_login_needs_no_token_and_keeps_refresh_token_in_cookie(
 ) -> None:
     keycloak.token_response = (
         200,
-        {"access_token": "access", "refresh_token": "refresh", "expires_in": 300, "refresh_expires_in": 900},
+        {
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "expires_in": 300,
+            "refresh_expires_in": 900,
+        },
     )
 
     response = client.post("/auth/login", json={"username": "alice", "password": "secret-password"})

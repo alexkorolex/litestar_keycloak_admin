@@ -13,7 +13,11 @@ from litestar_keycloak.exceptions import exception_handlers as token_exception_h
 
 from litestar_keycloak_admin.client import KeycloakAdminClient
 from litestar_keycloak_admin.config import KeycloakAdminConfig
-from litestar_keycloak_admin.controller import STATE_KEY, KeycloakAccountController, KeycloakSessionController
+from litestar_keycloak_admin.controller import (
+    STATE_KEY,
+    KeycloakAccountController,
+    KeycloakSessionController,
+)
 from litestar_keycloak_admin.errors import (
     handle_http_exception,
     handle_keycloak_client_error,
@@ -39,7 +43,9 @@ class KeycloakAdminPlugin(InitPluginProtocol, CLIPlugin):
     - ``litestar keycloak create-user`` to create users (e.g. the first admin) from the CLI.
     """
 
-    def __init__(self, config: KeycloakAdminConfig, *, client: KeycloakAdminClient | None = None) -> None:
+    def __init__(
+        self, config: KeycloakAdminConfig, *, client: KeycloakAdminClient | None = None
+    ) -> None:
         self.config = config
         self.client = client or KeycloakAdminClient(config)
         self._keycloak = KeycloakPlugin(config.keycloak)
@@ -87,12 +93,18 @@ class KeycloakAdminPlugin(InitPluginProtocol, CLIPlugin):
 
         @keycloak_group.command(name="create-user", help="Create a user with a temporary password.")
         @click.argument("username")
-        @click.option("--role", "roles", multiple=True, required=True, help="Realm role; repeat for several.")
-        @click.option("--password", prompt=True, hide_input=True, envvar="KEYCLOAK_NEW_USER_PASSWORD")
+        @click.option(
+            "--role", "roles", multiple=True, required=True, help="Realm role; repeat for several."
+        )
+        @click.option(
+            "--password", prompt=True, hide_input=True, envvar="KEYCLOAK_NEW_USER_PASSWORD"
+        )
         @click.option("--email", default=None)
         @click.option("--first-name", default=None)
         @click.option("--last-name", default=None)
-        @click.option("--exist-ok", is_flag=True, help="Exit successfully if the user already exists.")
+        @click.option(
+            "--exist-ok", is_flag=True, help="Exit successfully if the user already exists."
+        )
         def create_user(
             app: Litestar,
             username: str,

@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.20"
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install project
+        run: uv sync --locked --group dev
+      - name: Run tests
+        run: uv run pytest
+
+  package:
+    name: Lint and validate distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.20"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Install project
+        run: uv sync --locked --group dev
+      - name: Run lint checks
+        run: uv run ruff check .
+      - name: Check formatting
+        run: uv run ruff format --check .
+      - name: Build distributions
+        run: uv build
+      - name: Validate package metadata and README
+        run: uv run twine check --strict dist/*
+      - name: Install the wheel in a clean environment
+        run: >-
+          uv run --isolated --no-project --with dist/*.whl
+          python -c "import litestar_keycloak_admin as m; print(m.KeycloakAdminPlugin)"

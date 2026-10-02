@@ -1,9 +1,17 @@
 # litestar-keycloak-admin
 
+[![PyPI](https://img.shields.io/pypi/v/litestar-keycloak-admin)](https://pypi.org/project/litestar-keycloak-admin/)
+[![Python](https://img.shields.io/pypi/pyversions/litestar-keycloak-admin)](https://pypi.org/project/litestar-keycloak-admin/)
+[![CI](https://github.com/alexkorolex/litestar_keycloak_admin/actions/workflows/ci.yml/badge.svg)](https://github.com/alexkorolex/litestar_keycloak_admin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/LICENSE)
+
 Account and user management for Litestar applications that use Keycloak as their identity
 provider. It lets your frontend keep its own login form, lets users manage their own account,
 and lets administrators create users with any realm roles. Neither the browser nor your code
 ever has to talk to Keycloak directly.
+
+> The project is currently alpha software. Pin the version, test upgrades in a staging
+> environment, and review the [security notes](https://github.com/alexkorolex/litestar_keycloak_admin#security-notes) before using it in production.
 
 The package is built on top of [litestar-keycloak](https://github.com/smirnoffmg/litestar-keycloak)
 and complements it rather than replacing it:
@@ -21,9 +29,29 @@ and complements it rather than replacing it:
 `KeycloakAdminPlugin` installs `litestar-keycloak`'s `KeycloakPlugin` for you, so an application
 registers exactly one plugin.
 
+**Contents:**
+[Installation](https://github.com/alexkorolex/litestar_keycloak_admin#installation) ·
+[Quick start](https://github.com/alexkorolex/litestar_keycloak_admin#quick-start) ·
+[Keycloak setup](https://github.com/alexkorolex/litestar_keycloak_admin#keycloak-setup) ·
+[Protecting routes](https://github.com/alexkorolex/litestar_keycloak_admin#protecting-routes) ·
+[Login flow](https://github.com/alexkorolex/litestar_keycloak_admin#login-flow) ·
+[Endpoints](https://github.com/alexkorolex/litestar_keycloak_admin#endpoints) ·
+[Errors](https://github.com/alexkorolex/litestar_keycloak_admin#errors) ·
+[Configuration](https://github.com/alexkorolex/litestar_keycloak_admin#configuration) ·
+[Command line](https://github.com/alexkorolex/litestar_keycloak_admin#command-line) ·
+[Using the client](https://github.com/alexkorolex/litestar_keycloak_admin#using-the-client-in-your-own-code) ·
+[Public API](https://github.com/alexkorolex/litestar_keycloak_admin#public-api) ·
+[Security notes](https://github.com/alexkorolex/litestar_keycloak_admin#security-notes)
+
 ## Installation
 
+Python 3.12 or newer is required.
+
 ```bash
+# pip
+python -m pip install litestar-keycloak-admin
+
+# or uv
 uv add litestar-keycloak-admin
 ```
 
@@ -58,7 +86,23 @@ set, the application now has:
 - every route protected by a Keycloak access token, except `/schema`, `/health` and the public
   auth endpoints;
 - `/reports` open to users holding `admin` **or** `analyst`;
-- the auth endpoints under `/auth` (see [Endpoints](#endpoints)).
+- the auth endpoints under `/auth` (see [Endpoints](https://github.com/alexkorolex/litestar_keycloak_admin#endpoints)).
+
+A minimal local environment looks like this:
+
+```dotenv
+KEYCLOAK_INTERNAL_URL=http://localhost:8080
+KEYCLOAK_REALM=my-realm
+KEYCLOAK_CLIENT_ID=my-backend
+KEYCLOAK_CLIENT_SECRET=replace-me
+
+# Optional: use a master-realm administrator for local development.
+KEYCLOAK_ADMIN=admin
+KEYCLOAK_ADMIN_PASSWORD=replace-me-too
+```
+
+Keep secrets outside source control. In production, prefer a narrowly scoped service account
+as described below.
 
 ## Keycloak setup
 
@@ -148,8 +192,9 @@ The endpoints are designed for a browser frontend with its own login form:
 1. **Log in**: `POST /auth/login` with `{"username", "password"}`. The response holds the access
    token. The refresh token is set as an `httponly` cookie and is never visible to JavaScript.
 2. **First login of a new user**: users created by an admin have a temporary password, so the
-   login responds `403` with the reason `passwordChangeRequired` (see [Errors](#errors)). The frontend asks for
-   a new password and calls `POST /auth/initial-password` with
+   login responds `403` with the reason `passwordChangeRequired`
+   (see [Errors](https://github.com/alexkorolex/litestar_keycloak_admin#errors)). The frontend
+   asks for a new password and calls `POST /auth/initial-password` with
    `{"username", "password", "new_password"}`. On success it returns tokens, just like a login.
 3. **Calling the API**: send `Authorization: Bearer <token>`.
 4. **Keeping the session alive**: before the access token expires (`expires_in`, in seconds), call
@@ -283,7 +328,7 @@ In your own handlers, `HTTPException(..., extra={"reason": "..."})` sets the `re
 | --- | --- | --- |
 | `INTERNAL_URL` | yes | Where the backend reaches Keycloak, e.g. `http://keycloak:8080` |
 | `REALM` | yes | Realm name |
-| `CLIENT_ID` | yes | The confidential client (see [Keycloak setup](#keycloak-setup)) |
+| `CLIENT_ID` | yes | The confidential client (see [Keycloak setup](https://github.com/alexkorolex/litestar_keycloak_admin#keycloak-setup)) |
 | `CLIENT_SECRET` | yes | Its secret |
 | `ISSUER` | no | Expected `iss`: the URL users reach Keycloak at, plus `/realms/<realm>`. Needed when it differs from `INTERNAL_URL`, e.g. behind a reverse proxy |
 | `AUDIENCE` | no | Expected `aud`; defaults to `CLIENT_ID` |
@@ -328,24 +373,69 @@ KEYCLOAK_NEW_USER_PASSWORD='temporary-secret' \
 ## Using the client in your own code
 
 `KeycloakAdminClient` is available to any handler as the `keycloak_admin` dependency, for
-user-management needs beyond the built-in endpoints:
+user-management needs beyond the built-in endpoints. For example, an administrator resetting a
+user's password to a temporary one, which the user replaces at the next login:
 
 ```python
+from dataclasses import dataclass
+
 from litestar import post
 from litestar.di import NamedDependency
+from litestar.exceptions import NotFoundException
+from litestar.params import FromPath
 from litestar_keycloak_admin import KeycloakAdminClient, requires_admin
 
 
+@dataclass
+class ResetPasswordRequest:
+    password: str
+
+
 @post("/users/{username:str}/reset-password", guards=[requires_admin], status_code=204)
-async def reset_password(username: str, keycloak_admin: NamedDependency[KeycloakAdminClient]) -> None:
+async def reset_password(
+    username: FromPath[str],
+    data: ResetPasswordRequest,
+    keycloak_admin: NamedDependency[KeycloakAdminClient],
+) -> None:
     subject = await keycloak_admin.find_user_id(username)
-    ...
+    if subject is None:
+        raise NotFoundException(f"User {username!r} not found")
+    await keycloak_admin.set_password(subject, data.password, temporary=True)
 ```
 
-It covers `login`, `refresh`, `logout`, `check_password`, `complete_initial_password`,
-`list_roles`, `create_user`, `update_user`, `set_password` and `find_user_id`. Its errors
-(`KeycloakClientError` and subclasses) are turned into the HTTP responses listed in
-[Errors](#errors) wherever they are raised.
+| Method | Does |
+| --- | --- |
+| `login(username, password)` | Password grant; returns Keycloak's token response |
+| `refresh(refresh_token)` | New tokens for a live session |
+| `logout(refresh_token)` | Ends the session |
+| `check_password(username, password)` | Whether the password is the user's current one |
+| `complete_initial_password(username, password, new_password)` | Replaces a temporary password and logs in |
+| `list_roles()` | The realm's own roles, without Keycloak's built-in ones |
+| `create_user(username=..., password=..., roles=..., ...)` | Creates a user, returns its subject id |
+| `update_user(subject, **representation)` | Partial update with Keycloak's `UserRepresentation` field names |
+| `set_password(subject, password, temporary=False)` | Sets a password |
+| `find_user_id(username)` | Subject id for an exact username, or `None` |
+
+Its errors (`KeycloakClientError` and subclasses) are turned into the HTTP responses listed in
+[Errors](https://github.com/alexkorolex/litestar_keycloak_admin#errors) wherever they are raised.
+
+## Public API
+
+Everything below is importable from `litestar_keycloak_admin`; other modules are internal.
+
+| Name | Kind |
+| --- | --- |
+| `KeycloakAdminPlugin` | The plugin to register on the application |
+| `KeycloakAdminConfig`, `RefreshCookieConfig` | Configuration |
+| `KeycloakAdminClient` | Asynchronous client for Keycloak's token endpoints and Admin REST API |
+| `requires_admin` | Guard: the caller holds `admin_role` |
+| `KeycloakSessionController`, `KeycloakAccountController`, `UserResponse` | The built-in endpoints and their user model |
+| `handle_http_exception`, `handle_internal_error`, `error_response`, `ErrorItem` | The error format |
+| `KeycloakClientError`, `KeycloakUnavailableError`, `KeycloakLoginError`, `PasswordChangeRequiredError`, `KeycloakAdminError` | Client exceptions |
+
+The package follows [Semantic Versioning](https://semver.org/); while it is in `0.x`, a minor
+release may contain breaking changes, which are listed in the
+[changelog](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/CHANGELOG.md).
 
 ## Security notes
 
@@ -364,8 +454,25 @@ It covers `login`, `refresh`, `logout`, `check_password`, `complete_initial_pass
 ## Development
 
 ```bash
-uv run pytest packages/litestar-keycloak-admin/tests
+uv sync --group dev
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+uv build
+uv run twine check --strict dist/*
 ```
 
 The tests start a fake Keycloak on `aiohttp.web` (`tests/fake_keycloak.py`), so they run real
 HTTP against both this package and `litestar-keycloak` without a Keycloak instance.
+
+See [CONTRIBUTING.md](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/CONTRIBUTING.md)
+for contribution guidelines,
+[CHANGELOG.md](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/CHANGELOG.md)
+for user-visible changes, and the
+[release guide](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/docs/releasing.md)
+for the release process.
+
+## License
+
+Distributed under the
+[MIT License](https://github.com/alexkorolex/litestar_keycloak_admin/blob/main/LICENSE).

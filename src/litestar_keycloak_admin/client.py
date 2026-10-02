@@ -41,7 +41,9 @@ class _Response:
             return None
         if not isinstance(payload, dict):
             return None
-        return payload.get("error_description") or payload.get("errorMessage") or payload.get("error")
+        return (
+            payload.get("error_description") or payload.get("errorMessage") or payload.get("error")
+        )
 
 
 class KeycloakAdminClient:
@@ -70,6 +72,7 @@ class KeycloakAdminClient:
         return self._session
 
     async def close(self) -> None:
+        """Close the HTTP session; the plugin calls it at application shutdown."""
         if self._session is not None and not self._session.closed:
             await self._session.close()
         self._session = None
@@ -88,7 +91,11 @@ class KeycloakAdminClient:
         response = await self._request(
             "POST",
             self.config.keycloak.token_url,
-            data={"client_id": self.config.client_id, "client_secret": self.config.client_secret, **data},
+            data={
+                "client_id": self.config.client_id,
+                "client_secret": self.config.client_secret,
+                **data,
+            },
         )
         if response.status == HTTPStatus.OK:
             return response.json()
@@ -107,7 +114,9 @@ class KeycloakAdminClient:
             PasswordChangeRequiredError: the account still has a temporary password.
             KeycloakLoginError: wrong credentials.
         """
-        return await self._token_grant({"grant_type": "password", "username": username, "password": password})
+        return await self._token_grant(
+            {"grant_type": "password", "username": username, "password": password}
+        )
 
     async def refresh(self, refresh_token: str) -> dict[str, Any]:
         """New tokens for a live session (Keycloak rotates the refresh token too).
@@ -115,7 +124,9 @@ class KeycloakAdminClient:
         Raises:
             KeycloakLoginError: the refresh token is expired, revoked or malformed.
         """
-        return await self._token_grant({"grant_type": "refresh_token", "refresh_token": refresh_token})
+        return await self._token_grant(
+            {"grant_type": "refresh_token", "refresh_token": refresh_token}
+        )
 
     async def logout(self, refresh_token: str) -> None:
         """End the session behind ``refresh_token``. An already dead session is fine."""
@@ -197,7 +208,10 @@ class KeycloakAdminClient:
     async def _admin(self, method: str, path: str, **kwargs: Any) -> _Response:  # noqa: ANN401
         token = await self._fetch_admin_token()
         response = await self._request(
-            method, self.config.admin_realm_url + path, headers={"Authorization": f"Bearer {token}"}, **kwargs
+            method,
+            self.config.admin_realm_url + path,
+            headers={"Authorization": f"Bearer {token}"},
+            **kwargs,
         )
         if response.status == HTTPStatus.UNAUTHORIZED:
             # Revoked or expired early (e.g. Keycloak restarted) - drop it so the next call re-fetches.
@@ -244,13 +258,17 @@ class KeycloakAdminClient:
                 "enabled": True,
                 "emailVerified": email is not None,
                 "requiredActions": ["UPDATE_PASSWORD"] if temporary_password else [],
-                "credentials": [{"type": "password", "value": password, "temporary": temporary_password}],
+                "credentials": [
+                    {"type": "password", "value": password, "temporary": temporary_password}
+                ],
             },
         )
         if created.status == HTTPStatus.CONFLICT:
             raise KeycloakAdminError(f"User {username!r} already exists", conflict=True)
         if created.status == HTTPStatus.BAD_REQUEST:
-            raise KeycloakAdminError(created.error_description() or "User rejected by Keycloak", invalid=True)
+            raise KeycloakAdminError(
+                created.error_description() or "User rejected by Keycloak", invalid=True
+            )
         if created.status != HTTPStatus.CREATED:
             raise KeycloakAdminError(f"Could not create Keycloak user: {created.text}")
         subject = created.headers["Location"].rsplit("/", 1)[-1]
@@ -275,7 +293,9 @@ class KeycloakAdminClient:
         (``firstName``, ``email``, ``requiredActions``, ...)."""
         updated = await self._admin("PUT", f"/users/{subject}", json=representation)
         if updated.status == HTTPStatus.CONFLICT:
-            raise KeycloakAdminError("This e-mail is already used by another account", conflict=True)
+            raise KeycloakAdminError(
+                "This e-mail is already used by another account", conflict=True
+            )
         if updated.status == HTTPStatus.BAD_REQUEST:
             raise KeycloakAdminError(
                 updated.error_description() or "Update rejected by Keycloak", invalid=True
@@ -284,6 +304,11 @@ class KeycloakAdminClient:
             raise KeycloakAdminError(f"Could not update Keycloak user: {updated.text}")
 
     async def set_password(self, subject: str, password: str, *, temporary: bool = False) -> None:
+        """Set the user's password; a ``temporary`` one has to be replaced at the next login.
+
+        Raises:
+            KeycloakAdminError: the password breaks the realm's password policy (``invalid``).
+        """
         reset = await self._admin(
             "PUT",
             f"/users/{subject}/reset-password",
@@ -296,6 +321,7 @@ class KeycloakAdminClient:
             raise KeycloakAdminError(f"Could not set Keycloak password: {reset.text}")
 
     async def find_user_id(self, username: str) -> str | None:
+        """The subject id of the user with exactly this username, or ``None``."""
         found = await self._admin("GET", "/users", params={"username": username, "exact": "true"})
         if found.status != HTTPStatus.OK:
             raise KeycloakAdminError(f"Could not look up user {username!r}: {found.text}")

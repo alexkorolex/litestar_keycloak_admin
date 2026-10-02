@@ -1,0 +1,58 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.2.0
+        with:
+          version: "0.12.20"
+          python-version: "3.12"
+      - name: Verify release tag matches package version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          package_version="$(uv version --short)"
+          if [ "${RELEASE_TAG}" != "v${package_version}" ]; then
+            echo "Release tag ${RELEASE_TAG} does not match package version v${package_version}."
+            exit 1
+          fi
+      - name: Build distributions
+        run: uv build
+      - name: Validate package metadata and README
+        run: uvx twine check --strict dist/*
+      - name: Install the wheel in a clean environment
+        run: >-
+          uv run --isolated --no-project --with dist/*.whl
+          python -c "import litestar_keycloak_admin as m; print(m.KeycloakAdminPlugin)"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: python-package-distributions
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish distributions
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/litestar-keycloak-admin/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

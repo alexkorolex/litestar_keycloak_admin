@@ -67,7 +67,10 @@ REASONS: Mapping[int, str] = {
 
 @dataclass(frozen=True, slots=True)
 class ErrorItem:
+    """One entry of ``error.errors`` in an error response."""
+
     reason: str
+    """Stable, machine-readable cause, e.g. ``invalidParameter`` or ``expired``."""
     message: str
     location: str | None = None
     """What the error is about, e.g. a field name or ``Authorization``."""
@@ -95,7 +98,11 @@ def error_response(
     items = errors or [ErrorItem(reason=REASONS.get(status_code, "unknown"), message=message)]
     return Response(
         content={
-            "error": {"errors": [item.to_dict() for item in items], "code": status_code, "message": message}
+            "error": {
+                "errors": [item.to_dict() for item in items],
+                "code": status_code,
+                "message": message,
+            }
         },
         status_code=status_code,
         media_type=MediaType.JSON,
@@ -103,7 +110,9 @@ def error_response(
     )
 
 
-def handle_http_exception(_: Request[Any, Any, Any], exc: HTTPException) -> Response[dict[str, Any]]:
+def handle_http_exception(
+    _: Request[Any, Any, Any], exc: HTTPException
+) -> Response[dict[str, Any]]:
     """Litestar's own errors and any ``HTTPException`` raised by handlers.
 
     Validation errors (``extra`` as a list of ``{"message", "key", "source"}``) become one
@@ -145,7 +154,9 @@ def handle_keycloak_client_error(
         return error_response(503, "Authentication service is unavailable")
     if isinstance(exc, PasswordChangeRequiredError):
         message = "The temporary password must be changed"
-        return error_response(403, message, [ErrorItem(reason="passwordChangeRequired", message=message)])
+        return error_response(
+            403, message, [ErrorItem(reason="passwordChangeRequired", message=message)]
+        )
     if isinstance(exc, KeycloakLoginError):
         return error_response(401, str(exc))
     if isinstance(exc, KeycloakAdminError) and exc.invalid:
@@ -166,10 +177,16 @@ def handle_token_error(_: Request[Any, Any, Any], exc: KeycloakError) -> Respons
             # Keep the details (expected issuer, audiences) out of the response, as litestar-keycloak does.
             logger.info("Authentication failed: %s: %s", type(exc).__name__, exc)
             message, reason = "Invalid token", "authError"
-        item = ErrorItem(reason=reason, message=message, location="Authorization", location_type="header")
+        item = ErrorItem(
+            reason=reason, message=message, location="Authorization", location_type="header"
+        )
         return error_response(401, message, [item], headers={"WWW-Authenticate": "Bearer"})
     if isinstance(exc, AuthorizationError):
-        reason = "insufficientScope" if isinstance(exc, InsufficientScopeError) else "insufficientPermissions"
+        reason = (
+            "insufficientScope"
+            if isinstance(exc, InsufficientScopeError)
+            else "insufficientPermissions"
+        )
         return error_response(403, str(exc), [ErrorItem(reason=reason, message=str(exc))])
     if isinstance(exc, KeycloakBackendError):
         logger.warning("Cannot validate a token: %s", exc)
