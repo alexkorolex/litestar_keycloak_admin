@@ -29,3 +29,24 @@ class KeycloakAdminError(KeycloakClientError):
         self.invalid = invalid
         """Keycloak refused the input itself, e.g. an unknown role or a password that breaks
         the realm's policy."""
+
+
+class LoginChallengeError(KeycloakClientError):
+    """The second login step failed: wrong or expired code, too many tries, no delivery."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str,
+        status_code: int,
+        location: str | None = None,
+        retry_after: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        """Stable cause: ``invalidCode``, ``challengeExpired``, ``tooManyAttempts``,
+        ``tooManySends``, ``resendTooSoon``, ``emailRequired``, ``codeDeliveryFailed``."""
+        self.status_code = status_code
+        self.location = location
+        self.retry_after = retry_after

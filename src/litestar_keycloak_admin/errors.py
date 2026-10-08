@@ -43,6 +43,7 @@ from litestar_keycloak_admin.exceptions import (
     KeycloakClientError,
     KeycloakLoginError,
     KeycloakUnavailableError,
+    LoginChallengeError,
     PasswordChangeRequiredError,
 )
 
@@ -150,6 +151,8 @@ def handle_keycloak_client_error(
     _: Request[Any, Any, Any], exc: KeycloakClientError
 ) -> Response[dict[str, Any]]:
     """Errors of ``KeycloakAdminClient``, wherever they're raised from."""
+    if isinstance(exc, LoginChallengeError):
+        return _login_challenge_error(exc)
     if isinstance(exc, KeycloakUnavailableError):
         return error_response(503, "Authentication service is unavailable")
     if isinstance(exc, PasswordChangeRequiredError):
@@ -164,6 +167,17 @@ def handle_keycloak_client_error(
     if isinstance(exc, KeycloakAdminError) and exc.conflict:
         return error_response(409, str(exc))
     return error_response(502, str(exc))
+
+
+def _login_challenge_error(exc: LoginChallengeError) -> Response[dict[str, Any]]:
+    item = ErrorItem(
+        reason=exc.reason,
+        message=str(exc),
+        location=exc.location,
+        location_type="body" if exc.location else None,
+    )
+    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+    return error_response(exc.status_code, str(exc), [item], headers=headers)
 
 
 def handle_token_error(_: Request[Any, Any, Any], exc: KeycloakError) -> Response[dict[str, Any]]:

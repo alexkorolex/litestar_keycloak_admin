@@ -208,6 +208,40 @@ For non-browser clients (mobile apps, scripts), disable the cookie with
 `refresh_cookie=RefreshCookieConfig(enabled=False)`: the refresh token is then returned in the
 response body and sent back as `{"refresh_token": "..."}` to `/refresh` and `/logout`.
 
+## Login verification by code
+
+Set `login_verification` to require a one-time code after the password. The application
+decides how the code reaches the user - the package only calls `send_code`:
+
+```python
+from litestar_keycloak_admin import KeycloakAdminConfig, LoginCode, LoginVerificationConfig
+
+
+async def send_code(code: LoginCode) -> None:
+    await mailer.send(code.email, f"Your login code: {code.code}")  # or publish to a queue
+
+
+config = KeycloakAdminConfig.from_env(
+    login_verification=LoginVerificationConfig(send_code=send_code),
+)
+```
+
+`POST /login` and `POST /initial-password` then check the password and answer
+`202 {"challenge_id", "expires_in", "destination": "a***@example.com", "code_required": true}`
+instead of tokens. `POST /login/verify` with the right code returns the usual `TokenResponse`
+(and the refresh cookie); `POST /login/resend` sends a new code for the same challenge.
+
+- The Keycloak tokens of the checked password wait in a Litestar store under
+  `LoginVerificationConfig.store` and are refreshed on success. Register a shared store
+  (e.g. `RedisStore`) under that name when the app runs several workers.
+- The code is kept only as an HMAC; `max_attempts` wrong codes (default 5) end the Keycloak
+  session. Codes live `ttl_seconds` (300); `resend_interval_seconds` (60) and `max_sends` (4)
+  limit resending.
+- The e-mail comes from the access token's `email` claim; an account without one gets
+  `403 emailRequired`. A `send_code` that raises gives `503 codeDeliveryFailed`.
+- Error reasons: `invalidCode` (401), `challengeExpired` (401), `tooManyAttempts` (429),
+  `tooManySends` (429), `resendTooSoon` (429 with `Retry-After`).
+
 ## Endpoints
 
 All paths are relative to `auth_path` (default `/auth`).
@@ -220,6 +254,10 @@ All paths are relative to `auth_path` (default `/auth`).
 | `POST /initial-password` | `username`, `password` (the temporary one), `new_password` | `200`, `TokenResponse` |
 | `POST /refresh` | `refresh_token` (only without the cookie) | `200`, `TokenResponse` |
 | `POST /logout` | `refresh_token` (only without the cookie) | `204` |
+| `POST /login/verify` | `challenge_id`, `code` | `200`, `TokenResponse` |
+| `POST /login/resend` | `challenge_id` | `202`, `LoginChallengeResponse` |
+
+The last two exist only with `login_verification` (see below); otherwise they answer `404`.
 
 `TokenResponse` is
 `{"token": str, "expires_in": int, "refresh_expires_in": int, "refresh_token": str | null}`;

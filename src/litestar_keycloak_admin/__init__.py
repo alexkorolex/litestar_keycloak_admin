@@ -1,8 +1,10 @@
+from litestar_keycloak_admin.challenges import LoginChallenge, LoginChallenges
 from litestar_keycloak_admin.client import KeycloakAdminClient
 from litestar_keycloak_admin.config import KeycloakAdminConfig, RefreshCookieConfig
 from litestar_keycloak_admin.controller import (
     KeycloakAccountController,
     KeycloakSessionController,
+    LoginChallengeResponse,
     UserResponse,
     requires_admin,
 )
@@ -17,9 +19,15 @@ from litestar_keycloak_admin.exceptions import (
     KeycloakClientError,
     KeycloakLoginError,
     KeycloakUnavailableError,
+    LoginChallengeError,
     PasswordChangeRequiredError,
 )
 from litestar_keycloak_admin.plugin import KeycloakAdminPlugin
+from litestar_keycloak_admin.verification import (
+    LoginCode,
+    LoginCodeSender,
+    LoginVerificationConfig,
+)
 
 __all__ = (
     "ErrorItem",
@@ -32,6 +40,13 @@ __all__ = (
     "KeycloakLoginError",
     "KeycloakSessionController",
     "KeycloakUnavailableError",
+    "LoginChallenge",
+    "LoginChallengeError",
+    "LoginChallengeResponse",
+    "LoginChallenges",
+    "LoginCode",
+    "LoginCodeSender",
+    "LoginVerificationConfig",
     "PasswordChangeRequiredError",
     "RefreshCookieConfig",
     "UserResponse",

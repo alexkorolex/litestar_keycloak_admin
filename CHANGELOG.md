@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026.10.08
+
+### Added
+
+- Optional login verification by a one-time code (`LoginVerificationConfig`): `/login` and
+  `/initial-password` answer `202` with a challenge, `/login/verify` issues the tokens and
+  `/login/resend` sends a new code. The application delivers codes through `send_code`.
+- `LoginChallengeError` with machine-readable reasons for the second login step.
+
 ## [0.1.0] - 2026.10.02
 
 ### Added

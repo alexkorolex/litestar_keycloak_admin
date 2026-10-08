@@ -4,10 +4,11 @@ from typing import Any
 from litestar import Controller, Request, Response, get, patch, post
 from litestar.connection import ASGIConnection
 from litestar.datastructures import Cookie
-from litestar.exceptions import ClientException, NotAuthorizedException
+from litestar.exceptions import ClientException, NotAuthorizedException, NotFoundException
 from litestar.handlers.base import BaseRouteHandler
 from litestar_keycloak import CurrentUser, KeycloakUser, MatchStrategy, require_roles
 
+from litestar_keycloak_admin.challenges import LoginChallenge, LoginChallenges
 from litestar_keycloak_admin.client import KeycloakAdminClient
 from litestar_keycloak_admin.config import KeycloakAdminConfig
 
@@ -54,6 +55,39 @@ class TokenResponse:
     refresh_expires_in: int | None
     refresh_token: str | None = None
     """Only returned when the refresh cookie is disabled - otherwise it lives in the cookie."""
+
+
+@dataclass
+class LoginCodeRequest:
+    challenge_id: str
+    code: str
+
+
+@dataclass
+class LoginChallengeRequest:
+    challenge_id: str
+
+
+@dataclass
+class LoginChallengeResponse:
+    """Answer of ``/login`` while the second step is on: the code went to ``destination``."""
+
+    challenge_id: str
+    expires_in: int
+    destination: str
+    """The masked e-mail, e.g. ``a***@example.com``."""
+    code_required: bool = True
+
+    @classmethod
+    def from_challenge(cls, challenge: LoginChallenge) -> "LoginChallengeResponse":
+        return cls(
+            challenge_id=challenge.challenge_id,
+            expires_in=challenge.expires_in,
+            destination=challenge.destination,
+        )
+
+
+SessionResponse = Response[TokenResponse | LoginChallengeResponse]
 
 
 @dataclass
@@ -142,6 +176,28 @@ def _token_response(config: KeycloakAdminConfig, tokens: dict[str, Any]) -> Resp
     return Response(content=body, cookies=cookies)
 
 
+def _login_challenges(request: Request[Any, Any, Any]) -> LoginChallenges:
+    client = keycloak_admin(request)
+    verification = client.config.login_verification
+    if verification is None:
+        raise NotFoundException("Login verification is not enabled")
+    return LoginChallenges(verification, client, request.app.stores.get(verification.store))
+
+
+def _challenge_response(challenge: LoginChallenge) -> Response[LoginChallengeResponse]:
+    return Response(content=LoginChallengeResponse.from_challenge(challenge), status_code=202)
+
+
+async def _session_response(
+    request: Request[Any, Any, Any], tokens: dict[str, Any]
+) -> SessionResponse:
+    """Tokens right away, or - with ``login_verification`` - a challenge to confirm first."""
+    client = keycloak_admin(request)
+    if client.config.login_verification is None:
+        return _token_response(client.config, tokens)
+    return _challenge_response(await _login_challenges(request).start(tokens))
+
+
 def _refresh_token(request: Request[Any, Any, Any], data: RefreshTokenRequest | None) -> str | None:
     config = keycloak_admin(request).config
     from_cookie = (
@@ -174,16 +230,30 @@ class KeycloakSessionController(Controller):
     tags = ("auth",)
 
     @post("/login", status_code=200, name="keycloak:login")
-    async def login(
-        self, request: Request[Any, Any, Any], data: LoginRequest
-    ) -> Response[TokenResponse]:
+    async def login(self, request: Request[Any, Any, Any], data: LoginRequest) -> SessionResponse:
+        """Tokens, or ``202`` with a challenge when ``login_verification`` is on."""
         client = keycloak_admin(request)
-        return _token_response(client.config, await client.login(data.username, data.password))
+        return await _session_response(request, await client.login(data.username, data.password))
+
+    @post("/login/verify", status_code=200, name="keycloak:login-verify")
+    async def verify_login(
+        self, request: Request[Any, Any, Any], data: LoginCodeRequest
+    ) -> Response[TokenResponse]:
+        """Confirm the code sent at ``/login`` and get the session tokens."""
+        tokens = await _login_challenges(request).verify(data.challenge_id, data.code)
+        return _token_response(keycloak_admin(request).config, tokens)
+
+    @post("/login/resend", status_code=202, name="keycloak:login-resend")
+    async def resend_login_code(
+        self, request: Request[Any, Any, Any], data: LoginChallengeRequest
+    ) -> Response[LoginChallengeResponse]:
+        """Send a new code for the same challenge; the previous one stops working."""
+        return _challenge_response(await _login_challenges(request).resend(data.challenge_id))
 
     @post("/initial-password", status_code=200, name="keycloak:initial-password")
     async def initial_password(
         self, request: Request[Any, Any, Any], data: InitialPasswordRequest
-    ) -> Response[TokenResponse]:
+    ) -> SessionResponse:
         """Replace the temporary password of a freshly registered account and log in."""
         client = keycloak_admin(request)
         _check_password_length(client.config, "new_password", data.new_password)
@@ -192,7 +262,7 @@ class KeycloakSessionController(Controller):
         tokens = await client.complete_initial_password(
             data.username, data.password, data.new_password
         )
-        return _token_response(client.config, tokens)
+        return await _session_response(request, tokens)
 
     @post("/refresh", status_code=200, name="keycloak:refresh")
     async def refresh(
