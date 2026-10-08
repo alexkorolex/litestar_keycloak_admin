@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from litestar_keycloak import KeycloakConfig
 
+from litestar_keycloak_admin.verification import LoginVerificationConfig
+
 
 @dataclass(frozen=True, slots=True)
 class RefreshCookieConfig:
@@ -54,6 +56,8 @@ class KeycloakAdminConfig:
     """Checked before a password reaches Keycloak, whose own password policy applies too."""
     timeout: float = 10
     """Seconds allowed for each request to Keycloak."""
+    login_verification: LoginVerificationConfig | None = None
+    """Second login step with a one-time code; off when ``None``."""
 
     @classmethod
     def from_env(

@@ -30,6 +30,8 @@ class FakeKeycloak:
         self.created: list[dict[str, Any]] = []
         self.assigned: list[str] = []
         self.token_response: tuple[int, dict[str, Any]] = (400, {"error": "invalid_grant"})
+        self.grants: list[str] = []
+        self.logged_out: list[str] = []
         self._loop = asyncio.new_event_loop()
         self._socket = socket.socket()
         self._socket.bind(("127.0.0.1", 0))
@@ -58,6 +60,7 @@ class FakeKeycloak:
         app = web.Application()
         app.router.add_get(f"{realm}/certs", self._certs)
         app.router.add_post(f"{realm}/token", self._token)
+        app.router.add_post(f"{realm}/logout", self._logout)
         app.router.add_post("/realms/master/protocol/openid-connect/token", self._admin_token)
         app.router.add_get(f"{admin}/roles", self._roles)
         app.router.add_get(f"{admin}/roles/{{name}}", self._role)
@@ -68,9 +71,14 @@ class FakeKeycloak:
     async def _certs(self, _: web.Request) -> web.Response:
         return web.json_response({"keys": [self.jwk]})
 
-    async def _token(self, _: web.Request) -> web.Response:
+    async def _token(self, request: web.Request) -> web.Response:
+        self.grants.append(str((await request.post()).get("grant_type")))
         status, payload = self.token_response
         return web.json_response(payload, status=status)
+
+    async def _logout(self, request: web.Request) -> web.Response:
+        self.logged_out.append(str((await request.post()).get("refresh_token")))
+        return web.Response(status=204)
 
     async def _admin_token(self, _: web.Request) -> web.Response:
         return web.json_response({"access_token": "admin-token", "expires_in": 60})
