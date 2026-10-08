@@ -31,6 +31,9 @@ class FakeKeycloak:
         self.assigned: list[str] = []
         self.token_response: tuple[int, dict[str, Any]] = (400, {"error": "invalid_grant"})
         self.grants: list[str] = []
+        self.users: dict[str, dict[str, Any]] = {}
+        self.user_status = 200
+        """Status of ``GET /users/{id}``; set to 500 to simulate an Admin API failure."""
         self.logged_out: list[str] = []
         self._loop = asyncio.new_event_loop()
         self._socket = socket.socket()
@@ -66,6 +69,8 @@ class FakeKeycloak:
         app.router.add_get(f"{admin}/roles/{{name}}", self._role)
         app.router.add_post(f"{admin}/users", self._create_user)
         app.router.add_post(f"{admin}/users/{{id}}/role-mappings/realm", self._assign)
+        app.router.add_get(f"{admin}/users/{{id}}", self._get_user)
+        app.router.add_put(f"{admin}/users/{{id}}", self._put_user)
         return app
 
     async def _certs(self, _: web.Request) -> web.Response:
@@ -105,6 +110,18 @@ class FakeKeycloak:
         return web.Response(
             status=201, headers={"Location": f"{self.url}/admin/realms/{REALM}/users/new-id"}
         )
+
+    async def _get_user(self, request: web.Request) -> web.Response:
+        self._authorized(request)
+        user = self.users.get(request.match_info["id"])
+        if self.user_status != 200:
+            return web.json_response({}, status=self.user_status)
+        return web.json_response(user) if user else web.json_response({}, status=404)
+
+    async def _put_user(self, request: web.Request) -> web.Response:
+        self._authorized(request)
+        self.users[request.match_info["id"]] = await request.json()
+        return web.Response(status=204)
 
     async def _assign(self, request: web.Request) -> web.Response:
         self._authorized(request)

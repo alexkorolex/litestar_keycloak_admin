@@ -60,7 +60,7 @@ class LoginChallenges:
         self._store = store
 
     async def start(self, tokens: dict[str, Any]) -> LoginChallenge:
-        claims = _unverified_claims(str(tokens["access_token"]))
+        claims = unverified_claims(str(tokens["access_token"]))
         email = claims.get("email")
         if not email:
             await self._end_session(tokens)
@@ -216,7 +216,7 @@ def _expired() -> LoginChallengeError:
     )
 
 
-def _unverified_claims(access_token: str) -> dict[str, Any]:
+def unverified_claims(access_token: str) -> dict[str, Any]:
     """Claims of a token the client has just received from Keycloak's token endpoint
     itself, so there is nobody to forge it - no signature check needed here."""
     try:

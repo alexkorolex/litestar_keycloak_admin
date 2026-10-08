@@ -5,6 +5,7 @@ from litestar_keycloak_admin.controller import (
     KeycloakAccountController,
     KeycloakSessionController,
     LoginChallengeResponse,
+    LoginVerificationSettings,
     UserResponse,
     requires_admin,
 )
@@ -23,6 +24,7 @@ from litestar_keycloak_admin.exceptions import (
     PasswordChangeRequiredError,
 )
 from litestar_keycloak_admin.plugin import KeycloakAdminPlugin
+from litestar_keycloak_admin.preferences import LoginVerificationPreferences
 from litestar_keycloak_admin.verification import (
     LoginCode,
     LoginCodeSender,
@@ -47,6 +49,8 @@ __all__ = (
     "LoginCode",
     "LoginCodeSender",
     "LoginVerificationConfig",
+    "LoginVerificationPreferences",
+    "LoginVerificationSettings",
     "PasswordChangeRequiredError",
     "RefreshCookieConfig",
     "UserResponse",
