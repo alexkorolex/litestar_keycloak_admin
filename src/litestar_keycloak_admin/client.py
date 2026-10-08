@@ -320,6 +320,27 @@ class KeycloakAdminClient:
         if reset.status != HTTPStatus.NO_CONTENT:
             raise KeycloakAdminError(f"Could not set Keycloak password: {reset.text}")
 
+    async def get_user(self, subject: str) -> dict[str, Any] | None:
+        """The full ``UserRepresentation`` (attributes included), or ``None``."""
+        found = await self._admin("GET", f"/users/{subject}")
+        if found.status == HTTPStatus.NOT_FOUND:
+            return None
+        if found.status != HTTPStatus.OK:
+            raise KeycloakAdminError(f"Could not read Keycloak user: {found.text}")
+        return found.json()
+
+    async def set_user_attribute(self, subject: str, name: str, values: list[str]) -> None:
+        """Replace one user attribute and keep the others.
+
+        Keycloak replaces the whole ``attributes`` map (and drops omitted fields) on update,
+        so the user is read first and sent back merged.
+        """
+        user = await self.get_user(subject)
+        if user is None:
+            raise KeycloakAdminError(f"User {subject!r} not found", invalid=True)
+        attributes = {**(user.get("attributes") or {}), name: values}
+        await self.update_user(subject, **{**user, "attributes": attributes})
+
     async def find_user_id(self, username: str) -> str | None:
         """The subject id of the user with exactly this username, or ``None``."""
         found = await self._admin("GET", "/users", params={"username": username, "exact": "true"})

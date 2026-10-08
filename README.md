@@ -242,6 +242,21 @@ instead of tokens. `POST /login/verify` with the right code returns the usual `T
 - Error reasons: `invalidCode` (401), `challengeExpired` (401), `tooManyAttempts` (429),
   `tooManySends` (429), `resendTooSoon` (429 with `Retry-After`).
 
+### Letting users turn the code off
+
+With `LoginVerificationConfig(user_choice=True)` every user decides for themselves:
+
+| Method and path | Body | Success |
+| --- | --- | --- |
+| `GET /me/login-verification` | | `200`, `{"enabled": bool, "changeable": bool}` |
+| `PUT /me/login-verification` | `enabled`, `password` (the current one) | `200`, same body |
+
+The choice lives in the user attribute `user_attribute` (default `login_verification`,
+`off` skips the code), written through the Admin API with the other attributes kept - the
+realm must allow it (User Profile `unmanagedAttributePolicy` `ADMIN_EDIT` or a declared
+attribute). The code stays required for everyone who has not turned it off and whenever the
+attribute cannot be read. Without `user_choice` the `PUT` answers `404`.
+
 ## Endpoints
 
 All paths are relative to `auth_path` (default `/auth`).

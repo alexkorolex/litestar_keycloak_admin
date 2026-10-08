@@ -39,7 +39,7 @@ def tokens(**claims: str) -> dict[str, object]:
     }
 
 
-def verification_app(outbox: CodeOutbox, **settings: int) -> Litestar:
+def verification_app(outbox: CodeOutbox, **settings: int | bool) -> Litestar:
     config = KeycloakAdminConfig.from_env(
         refresh_cookie=RefreshCookieConfig(secure=False),
         login_verification=LoginVerificationConfig(send_code=outbox, **settings),

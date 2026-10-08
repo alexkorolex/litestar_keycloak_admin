@@ -45,6 +45,11 @@ class LoginVerificationConfig:
     resend_interval_seconds: int = 60
     max_sends: int = 4
     """Codes sent per challenge, the first one included."""
+    user_choice: bool = False
+    """Let users turn the code off for themselves (``/me/login-verification``). It stays on
+    for everyone who has not, and whenever their choice cannot be read."""
+    user_attribute: str = "login_verification"
+    """User attribute holding the choice: ``off`` skips the code."""
 
     def __post_init__(self) -> None:
         if not 4 <= self.code_length <= 10:

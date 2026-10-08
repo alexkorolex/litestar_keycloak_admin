@@ -4,6 +4,15 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026.10.08
+
+### Added
+
+- `LoginVerificationConfig.user_choice`: users turn the login code on or off for themselves
+  through `GET`/`PUT /me/login-verification` (the change needs the current password). The
+  choice is kept in a Keycloak user attribute; when it cannot be read, the code is required.
+- `KeycloakAdminClient.get_user` and `set_user_attribute`.
+
 ## [0.2.0] - 2026.10.08
 
 ### Added

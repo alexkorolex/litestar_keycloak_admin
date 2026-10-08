@@ -1,16 +1,18 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from litestar import Controller, Request, Response, get, patch, post
+from litestar import Controller, Request, Response, get, patch, post, put
 from litestar.connection import ASGIConnection
 from litestar.datastructures import Cookie
 from litestar.exceptions import ClientException, NotAuthorizedException, NotFoundException
 from litestar.handlers.base import BaseRouteHandler
 from litestar_keycloak import CurrentUser, KeycloakUser, MatchStrategy, require_roles
 
-from litestar_keycloak_admin.challenges import LoginChallenge, LoginChallenges
+from litestar_keycloak_admin.challenges import LoginChallenge, LoginChallenges, unverified_claims
 from litestar_keycloak_admin.client import KeycloakAdminClient
 from litestar_keycloak_admin.config import KeycloakAdminConfig
+from litestar_keycloak_admin.preferences import LoginVerificationPreferences
+from litestar_keycloak_admin.verification import LoginVerificationConfig
 
 STATE_KEY = "keycloak_admin"
 """``app.state`` key of the application's ``KeycloakAdminClient``."""
@@ -88,6 +90,21 @@ class LoginChallengeResponse:
 
 
 SessionResponse = Response[TokenResponse | LoginChallengeResponse]
+
+
+@dataclass
+class LoginVerificationSettings:
+    """The caller's login code setting; ``changeable`` is false when the app decides alone."""
+
+    enabled: bool
+    changeable: bool
+
+
+@dataclass
+class LoginVerificationUpdate:
+    enabled: bool
+    password: str
+    """The current password: a stolen session alone must not turn the code off."""
 
 
 @dataclass
@@ -176,12 +193,21 @@ def _token_response(config: KeycloakAdminConfig, tokens: dict[str, Any]) -> Resp
     return Response(content=body, cookies=cookies)
 
 
-def _login_challenges(request: Request[Any, Any, Any]) -> LoginChallenges:
-    client = keycloak_admin(request)
-    verification = client.config.login_verification
+def _verification(request: Request[Any, Any, Any]) -> LoginVerificationConfig:
+    verification = keycloak_admin(request).config.login_verification
     if verification is None:
         raise NotFoundException("Login verification is not enabled")
-    return LoginChallenges(verification, client, request.app.stores.get(verification.store))
+    return verification
+
+
+def _login_challenges(request: Request[Any, Any, Any]) -> LoginChallenges:
+    verification = _verification(request)
+    store = request.app.stores.get(verification.store)
+    return LoginChallenges(verification, keycloak_admin(request), store)
+
+
+def _preferences(request: Request[Any, Any, Any]) -> LoginVerificationPreferences:
+    return LoginVerificationPreferences(_verification(request), keycloak_admin(request))
 
 
 def _challenge_response(challenge: LoginChallenge) -> Response[LoginChallengeResponse]:
@@ -191,9 +217,13 @@ def _challenge_response(challenge: LoginChallenge) -> Response[LoginChallengeRes
 async def _session_response(
     request: Request[Any, Any, Any], tokens: dict[str, Any]
 ) -> SessionResponse:
-    """Tokens right away, or - with ``login_verification`` - a challenge to confirm first."""
+    """Tokens right away, or - with ``login_verification`` - a challenge to confirm first,
+    unless the user has turned the code off."""
     client = keycloak_admin(request)
     if client.config.login_verification is None:
+        return _token_response(client.config, tokens)
+    subject = str(unverified_claims(str(tokens["access_token"])).get("sub") or "")
+    if not await _preferences(request).enabled(subject):
         return _token_response(client.config, tokens)
     return _challenge_response(await _login_challenges(request).start(tokens))
 
@@ -336,6 +366,37 @@ class KeycloakAccountController(Controller):
         if not username or not await client.check_password(username, data.current_password):
             raise _invalid("current_password", "Current password is incorrect")
         await client.set_password(current_user.sub, data.new_password)
+
+    @get("/me/login-verification", name="keycloak:me-login-verification")
+    async def login_verification(
+        self, request: Request[Any, Any, Any], current_user: CurrentUser
+    ) -> LoginVerificationSettings:
+        """Whether the caller's logins need an e-mailed code, and if they may change it."""
+        if keycloak_admin(request).config.login_verification is None:
+            return LoginVerificationSettings(enabled=False, changeable=False)
+        preferences = _preferences(request)
+        return LoginVerificationSettings(
+            enabled=await preferences.enabled(current_user.sub),
+            changeable=preferences.changeable,
+        )
+
+    @put("/me/login-verification", name="keycloak:me-login-verification-update")
+    async def update_login_verification(
+        self,
+        request: Request[Any, Any, Any],
+        current_user: CurrentUser,
+        data: LoginVerificationUpdate,
+    ) -> LoginVerificationSettings:
+        """Turn the login code on or off for the caller; needs the current password."""
+        preferences = _preferences(request)
+        if not preferences.changeable:
+            raise NotFoundException("Login verification cannot be changed by users")
+        username = current_user.preferred_username
+        client = keycloak_admin(request)
+        if not username or not await client.check_password(username, data.password):
+            raise _invalid("password", "Password is incorrect")
+        await preferences.set_enabled(current_user.sub, data.enabled)
+        return LoginVerificationSettings(enabled=data.enabled, changeable=True)
 
     @get("/roles", name="keycloak:roles", guards=[requires_admin])
     async def roles(self, request: Request[Any, Any, Any]) -> list[RoleResponse]:
