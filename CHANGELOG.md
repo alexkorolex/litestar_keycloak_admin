@@ -4,6 +4,13 @@ All notable changes to this project are documented in this file. The format is b
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026.10.08
+
+### Fixed
+
+- The package includes `litestar_keycloak_admin.preferences`; the 0.3.0 build lacked it and
+  was never published.
+
 ## [0.3.0] - 2026.10.08
 
 ### Added
